@@ -1,19 +1,19 @@
 #include <stdio.h>
 
-#define N 256
+#define N 512
 
-__global__ void add(int *a, int *b, int *c);
+__global__ void add(int *a, int *b);
 
 int main()
 {
-	int *a, *b, c;
-	int *d_a, *d_b, *d_c;
+	int *a, *b;
+	int *d_a, *d_b;
 	int i;
 
 	// allocate space for device copies
 	cudaMalloc(&d_a, N*sizeof(int));
 	cudaMalloc(&d_b, N*sizeof(int));
-	cudaMalloc(&d_c, sizeof(int));
+	//cudaMalloc(&d_c, sizeof(int));
 
 	// allocate variables
 	a = (int *)malloc(N*sizeof(int));
@@ -21,34 +21,46 @@ int main()
 
 	// attribute values to arrays
 	for(i = 0; i < N; i++)
-	{
 		a[i] = i;
-		b[i] = i;
-	}
+	b[0] = 0;	
 
 	// copy inputs to device
 	cudaMemcpy(d_a, a, N*sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_b, b, N*sizeof(int), cudaMemcpyHostToDevice);
 
 	// Lauch add() kernel on GPU
-	add<<<1,N>>>(d_a, d_b, d_c);
+	add<<<1,N>>>(d_a, d_b);
 
 	// copy result back to Host
-	cudaMemcpy(&c, d_c, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(b, d_b, N*sizeof(int), cudaMemcpyDeviceToHost);
 
-	for(i = 0; i < N; i++)
-		printf("c = %d\n", c);
+	printf("result = %d\n", b[0]);
 
 	free(a);
 	free(b);
 	cudaFree(d_a);
 	cudaFree(d_b);
-	cudaFree(d_c);
 }
 
-__global__ void add(int *a, int *b, int *c)
+__global__ void add(int *a, int *b)
 {
-	__shared__ int result = 0;
-	result = a[threadIdx.x] + b[threadIdx.x] + result;
-	c = result;
+	__shared__ int data[512];
+	int i;
+
+	// each thread loads one element from global to shared mem
+	int index = threadIdx.x + blockIdx.x*blockDim.x;
+	data[threadIdx.x] = a[index];
+	__syncthreads();
+
+	// do reduction in shared mem
+	for(i = 1; i < blockDim.x; i = i*2)
+	{
+		if(threadIdx.x % (2*i) == 0)
+			data[threadIdx.x] = data[threadIdx.x] + data[threadIdx.x + i];
+		__syncthreads();
+	}
+
+	// write result for this block to global mem
+	if(threadIdx.x == 0)
+		b[blockIdx.x] = data[0];
 }

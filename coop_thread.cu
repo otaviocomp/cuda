@@ -44,7 +44,7 @@ int main()
 
 __global__ void add(int *a, int *b)
 {
-	__shared__ int data[512];
+	__shared__ int data[N];
 	int i;
 
 	// each thread loads one element from global to shared mem
@@ -55,12 +55,13 @@ __global__ void add(int *a, int *b)
 	// do reduction in shared mem
 	for(i = 1; i < blockDim.x; i = i*2)
 	{
-		if(threadIdx.x % (2*i) == 0)
-			data[threadIdx.x] = data[threadIdx.x] + data[threadIdx.x + i];
+		index = 2*i*threadIdx.x;
+		if(index < blockDim.x)
+			data[index] = data[index] + data[index + i];
 		__syncthreads();
 	}
 
 	// write result for this block to global mem
 	if(threadIdx.x == 0)
-		b[blockIdx.x] = data[0];
+		b[0] = data[0];
 }
